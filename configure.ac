@@ -64,7 +64,7 @@ case $host_platform:$host_cpu in
     host_platform=at;;
   default:x86_64)]
     [host_platform=at;;
-  at:i?86 | xen:i?86 | at:x86_64 | xen:x86_64)
+  at:i?86 | xen:i?86 | at:x86_64 | xen:x86_64 | rpi4:aarch64)
     :;;
   *)]
     AC_MSG_ERROR([unsupported combination of cpu type `$host_cpu' and platform
@@ -76,6 +76,8 @@ AC_SUBST([host_platform])
 case $host_cpu in
   i?86)
     systype=i386;;
+  aarch64)
+    systype=aarch64;;
   *)
     systype=$host_cpu;;
 esac]
@@ -165,6 +167,9 @@ m4_include([i386/configfrag.ac])
 
 # x86_64
 m4_include([x86_64/configfrag.ac])
+
+# aarch64
+m4_include([aarch64/configfrag.ac])
 
 # General options.
 m4_include([configfrag.ac])
