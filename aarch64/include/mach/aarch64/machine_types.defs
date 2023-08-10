@@ -1,0 +1,7 @@
+#ifndef _AARCH64_MACH_MACHINE_TYPES_H_
+#define _AARCH64_MACH_MACHINE_TYPES_H_
+
+type natural_t = uint64_t;
+type integer_t = int64_t;
+
+#endif //_AARCH64_MACH_MACHINE_TYPES_H_

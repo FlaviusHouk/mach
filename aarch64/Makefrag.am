@@ -18,7 +18,8 @@ if HOST_aarch64
 if PLATFORM_rpi4
 
 libkernel_a_SOURCES += \
-   locore.S
+   locore.S \
+   model_dep.c
 
 gnumach_LINKFLAGS += \
 	--defsym _START_MAP=$(_START_MAP) \
