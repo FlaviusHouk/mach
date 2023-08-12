@@ -20,7 +20,15 @@ esac
 
 case $host_platform in
   rpi4)]
-    AM_CONDITIONAL([PLATFORM_rpi4], [true])[;;
+    AM_CONDITIONAL([PLATFORM_rpi4], [true])
+
+	# It used /include/cache.h to allow aligning 
+	# of the data in the new cache line. Not sure how 
+	# does x86 L1 cache works, but in A72 it is 
+	# complex record in 8 bytes (64 bits) it will 
+	# technically work, but I am not sure how is 
+	# this supposed to work.
+    AC_DEFINE([CPU_L1_SHIFT], [3], [CPU_L1_SHIFT])[;;
   *)]
     AM_CONDITIONAL([PLATFORM_rpi4], [false])[;;
 esac]

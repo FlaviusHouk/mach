@@ -18,13 +18,20 @@ if HOST_aarch64
 if PLATFORM_rpi4
 
 libkernel_a_SOURCES += \
-   locore.S \
+   boot.S \
    model_dep.c
 
 gnumach_LINKFLAGS += \
 	--defsym _START_MAP=$(_START_MAP) \
 	--defsym _START=_START_MAP \
 	-T '$(srcdir)'/aarch64/rpi4/ldscript
+
+include_mach_aarch64dir = $(includedir)/mach/aarch64
+include_mach_aarch64_HEADERS = \
+	aarch64/include/mach/aarch64/kern_return.h \
+	aarch64/include/mach/aarch64/boolean.h \
+	aarch64/include/mach/aarch64/vm_types.h \
+	aarch64/include/mach/aarch64/machine_types.defs
 
 endif
 
