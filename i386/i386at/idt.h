@@ -37,8 +37,11 @@
 /* IOAPIC spurious interrupt vector set to 0xff */
 #define IOAPIC_SPURIOUS_BASE 0xff
 
+/* Remote -> local AST requests */
+#define CALL_AST_CHECK 0xfa
+
 /* Currently for TLB shootdowns */
-#define CALL_SINGLE_FUNCTION_BASE 0xfb
+#define CALL_PMAP_UPDATE 0xfb
 
 #include <i386/idt-gen.h>
 

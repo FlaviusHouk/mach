@@ -204,7 +204,7 @@ boolean_t _simple_lock_try(
 	return TRUE;
 }
 
-void simple_unlock(
+void _simple_unlock(
 	simple_lock_t l)
 {
 	assert(l->lock_data != 0);
@@ -340,11 +340,16 @@ void lock_done(
 	if (l->recursion_depth != 0)
 		l->recursion_depth--;
 	else
-	if (l->want_upgrade)
+	if (l->want_upgrade) {
 	 	l->want_upgrade = FALSE;
-	else {
+#if MACH_LDEBUG
+		assert(l->writer == current_thread());
+		l->writer = THREAD_NULL;
+#endif	/* MACH_LDEBUG */
+	} else {
 	 	l->want_write = FALSE;
 #if MACH_LDEBUG
+		assert(l->writer == current_thread());
 		l->writer = THREAD_NULL;
 #endif	/* MACH_LDEBUG */
 	}
@@ -494,6 +499,7 @@ void lock_write_to_read(
 	}
 
 #if MACH_LDEBUG
+	assert(l->writer == current_thread());
 	l->writer = THREAD_NULL;
 #endif	/* MACH_LDEBUG */
 	simple_unlock(&l->interlock);

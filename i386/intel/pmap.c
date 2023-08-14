@@ -1462,21 +1462,27 @@ void pmap_destroy(pmap_t p)
          */
 #if PAE
 #ifdef __x86_64__
-	for (int l4i = 0; l4i < lin2l4num(VM_MAX_USER_ADDRESS); l4i++) {
+	for (int l4i = 0; l4i < NPTES; l4i++) {
 		pt_entry_t pdp = (pt_entry_t) p->l4base[l4i];
 		if (!(pdp & INTEL_PTE_VALID))
 			continue;
 		pt_entry_t *pdpbase = (pt_entry_t*) ptetokv(pdp);
-		for (int l3i = 0; l3i < NPTES; l3i++)
 #else /* __x86_64__ */
 		pt_entry_t *pdpbase = p->pdpbase;
-		for (int l3i = 0; l3i < lin2pdpnum(VM_MAX_USER_ADDRESS); l3i++)
 #endif /* __x86_64__ */
-		{
+		for (int l3i = 0; l3i < NPTES; l3i++) {
 			pt_entry_t pde = (pt_entry_t) pdpbase[l3i];
 			if (!(pde & INTEL_PTE_VALID))
 				continue;
 			pt_entry_t *pdebase = (pt_entry_t*) ptetokv(pde);
+			if (
+#ifdef __x86_64__
+			    l4i < lin2l4num(VM_MAX_USER_ADDRESS) ||
+			    (l4i == lin2l4num(VM_MAX_USER_ADDRESS) && l3i <= lin2pdpnum(VM_MAX_USER_ADDRESS))
+#else /* __x86_64__ */
+			    l3i <= lin2pdpnum(VM_MAX_USER_ADDRESS)
+#endif /* __x86_64__ */
+			    )
 			for (int l2i = 0; l2i < NPTES; l2i++)
 #else /* PAE */
 			pt_entry_t *pdebase = p->dirbase;
@@ -1899,7 +1905,6 @@ void pmap_protect(
 	vm_offset_t	e,
 	vm_prot_t	prot)
 {
-	pt_entry_t	*pde;
 	pt_entry_t	*spte, *epte;
 	vm_offset_t	l;
 	int		spl;
@@ -1938,12 +1943,13 @@ void pmap_protect(
 	SPLVM(spl);
 	simple_lock(&map->lock);
 
-	pde = pmap_pde(map, s);
 	while (s < e) {
+	    pt_entry_t *pde = pde = pmap_pde(map, s);
+
 	    l = (s + PDE_MAPPED_SIZE) & ~(PDE_MAPPED_SIZE-1);
 	    if (l > e)
 		l = e;
-	    if (*pde & INTEL_PTE_VALID) {
+	    if (pde && (*pde & INTEL_PTE_VALID)) {
 		spte = (pt_entry_t *)ptetokv(*pde);
 		spte = &spte[ptenum(s)];
 		epte = &spte[intel_btop(l-s)];
@@ -1980,7 +1986,6 @@ void pmap_protect(
 #endif	/* MACH_PV_PAGETABLES */
 	    }
 	    s = l;
-	    pde++;
 	}
 	PMAP_UPDATE_TLBS(map, _s, e);
 

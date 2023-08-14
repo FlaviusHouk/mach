@@ -223,6 +223,10 @@ db_find_trace_symbols(void)
  */
 const int db_numargs_default = 5;
 
+#ifdef __x86_64
+/* Args are in registers */
+#define db_numargs(fp, task) -1
+#else
 static int
 db_numargs(
 	struct i386_frame *fp,
@@ -249,6 +253,7 @@ db_numargs(
 	}
 	return args;
 }
+#endif
 
 struct interrupt_frame {
 	struct i386_frame *if_frame;	/* point to next frame */
@@ -295,8 +300,15 @@ db_nextframe(
 	     */
 	    saved_regs = (struct i386_saved_state *)
 		db_get_task_value((long)&((*fp)->f_arg0),sizeof(long),FALSE,task);
-	    db_printf(">>>>> %s (%d) at ",
+	    db_printf(">>>>> %s (%d)",
 			trap_name(saved_regs->trapno), saved_regs->trapno);
+	    if (saved_regs->trapno == T_PAGE_FAULT)
+		db_printf(" for %s%s%s %lx",
+			saved_regs->err & T_PF_PROT ? "P" : "",
+			saved_regs->err & T_PF_WRITE ? "W" : "",
+			saved_regs->err & T_PF_USER ? "U" : "",
+			lintokv(saved_regs->cr2));
+	    db_printf(" at ");
 	    db_task_printsym(saved_regs->eip, DB_STGY_PROC, task);
 	    db_printf(" <<<<<\n");
 	    *fp = (struct i386_frame *)saved_regs->ebp;

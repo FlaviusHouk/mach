@@ -131,6 +131,21 @@ timer_elt_data_t recompute_priorities_timer;
 decl_simple_lock_data(static,	wait_lock[NUMQUEUES])	 /* Lock for... */
 queue_head_t		wait_queue[NUMQUEUES];
 
+#ifdef MACH_LDEBUG
+#define waitq_lock(wl)		do { \
+	assert(splsched() == SPL7); \
+	simple_lock_nocheck(wl); \
+} while (0)
+#define waitq_unlock(wl)	do { \
+	assert(splsched() == SPL7); \
+	simple_unlock_nocheck(wl); \
+} while (0)
+#else
+#define waitq_lock(wl)		simple_lock_nocheck(wl)
+#define waitq_unlock(wl)	simple_unlock_nocheck(wl)
+#endif
+
+
 /* NOTE: we want a small positive integer out of this */
 #define wait_hash(event) \
 	((((long)(event) < 0) ? ~(long)(event) : (long)(event)) % NUMQUEUES)
@@ -233,7 +248,7 @@ void assert_wait(
 		index = wait_hash(event);
 		q = &wait_queue[index];
 		lock = &wait_lock[index];
-		simple_lock(lock);
+		waitq_lock(lock);
 		thread_lock(thread);
 		enqueue_tail(q, &(thread->links));
 		thread->wait_event = event;
@@ -242,7 +257,7 @@ void assert_wait(
 		else
 			thread->state |= TH_WAIT | TH_UNINT;
 		thread_unlock(thread);
-		simple_unlock(lock);
+		waitq_unlock(lock);
 	}
 	else {
 		thread_lock(thread);
@@ -295,7 +310,7 @@ void clear_wait(
 		index = wait_hash(event);
 		q = &wait_queue[index];
 		lock = &wait_lock[index];
-		simple_lock(lock);
+		waitq_lock(lock);
 		/*
 		 *	If the thread is still waiting on that event,
 		 *	then remove it from the list.  If it is waiting
@@ -308,7 +323,7 @@ void clear_wait(
 			thread->wait_event = 0;
 			event = 0;		/* cause to run below */
 		}
-		simple_unlock(lock);
+		waitq_unlock(lock);
 	}
 	if (event == 0) {
 		int	state = thread->state;
@@ -387,7 +402,7 @@ boolean_t thread_wakeup_prim(
 	q = &wait_queue[index];
 	s = splsched();
 	lock = &wait_lock[index];
-	simple_lock(lock);
+	waitq_lock(lock);
 	thread = (thread_t) queue_first(q);
 	while (!queue_end(q, (queue_entry_t)thread)) {
 		next_th = (thread_t) queue_next((queue_t) thread);
@@ -436,7 +451,7 @@ boolean_t thread_wakeup_prim(
 		}
 		thread = next_th;
 	}
-	simple_unlock(lock);
+	waitq_unlock(lock);
 	splx(s);
 	return (woke);
 }
@@ -1174,7 +1189,7 @@ void update_priority(
 		whichq = NRQS - 1;					\
 	    }								\
 									\
-	    simple_lock(&(rq)->lock);	/* lock the run queue */	\
+	    runq_lock(rq);	/* lock the run queue */	\
 	    checkrq((rq), "thread_setrun: before adding thread");	\
 	    enqueue_tail(&(rq)->runq[whichq], &((th)->links));		\
 									\
@@ -1185,7 +1200,7 @@ void update_priority(
 	    (th)->runq = (rq);						\
 	    thread_check((th), (rq));					\
 	    checkrq((rq), "thread_setrun: after adding thread");	\
-	    simple_unlock(&(rq)->lock);					\
+	    runq_unlock(rq);						\
 	MACRO_END
 #else	/* DEBUG */
 #define run_queue_enqueue(rq, th)					\
@@ -1198,7 +1213,7 @@ void update_priority(
 		whichq = NRQS - 1;					\
 	    }								\
 									\
-	    simple_lock(&(rq)->lock);	/* lock the run queue */	\
+	    runq_lock(rq);	/* lock the run queue */	\
 	    enqueue_tail(&(rq)->runq[whichq], &((th)->links));		\
 									\
 	    if (whichq < (rq)->low || (rq)->count == 0) 		\
@@ -1206,7 +1221,7 @@ void update_priority(
 									\
 	    (rq)->count++;						\
 	    (th)->runq = (rq);						\
-	    simple_unlock(&(rq)->lock);					\
+	    runq_unlock(rq);						\
 	MACRO_END
 #endif	/* DEBUG */
 /*
@@ -1266,6 +1281,8 @@ void thread_setrun(
 			    processor->state = PROCESSOR_DISPATCHING;
 			    simple_unlock(&pset->idle_lock);
 			    processor_unlock(processor);
+			    if (processor != current_processor())
+				cause_ast_check(processor);
 		            return;
 		    }
 		    simple_unlock(&pset->idle_lock);
@@ -1283,6 +1300,8 @@ void thread_setrun(
 		    processor->next_thread = th;
 		    processor->state = PROCESSOR_DISPATCHING;
 		    simple_unlock(&pset->idle_lock);
+		    if (processor != current_processor())
+			cause_ast_check(processor);
 		    return;
 		}
 		simple_unlock(&pset->idle_lock);
@@ -1321,6 +1340,8 @@ void thread_setrun(
 		    processor->state = PROCESSOR_DISPATCHING;
 		    simple_unlock(&pset->idle_lock);
 		    processor_unlock(processor);
+		    if (processor != current_processor())
+			cause_ast_check(processor);
 		    return;
 		}
 		simple_unlock(&pset->idle_lock);
@@ -1422,7 +1443,7 @@ struct run_queue *rem_runq(
 	 *	the thread is on a runq, but could leave.
 	 */
 	if (rq != RUN_QUEUE_NULL) {
-		simple_lock(&rq->lock);
+		runq_lock(rq);
 #if	DEBUG
 		checkrq(rq, "rem_runq: at entry");
 #endif	/* DEBUG */
@@ -1441,7 +1462,7 @@ struct run_queue *rem_runq(
 			checkrq(rq, "rem_runq: after removing thread");
 #endif	/* DEBUG */
 			th->runq = RUN_QUEUE_NULL;
-			simple_unlock(&rq->lock);
+			runq_unlock(rq);
 		}
 		else {
 			/*
@@ -1450,7 +1471,7 @@ struct run_queue *rem_runq(
 			 *	can't move again because this routine's
 			 *	caller locked the thread.
 			 */
-			simple_unlock(&rq->lock);
+			runq_unlock(rq);
 			rq = RUN_QUEUE_NULL;
 		}
 	}

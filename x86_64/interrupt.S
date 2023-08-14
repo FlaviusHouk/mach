@@ -41,35 +41,23 @@
 ENTRY(interrupt)
 #ifdef APIC
 	cmpl	$255,%eax		/* was this a spurious intr? */
-	je	_no_eoi			/* if so, just return */
-
-	cmpl	$CALL_SINGLE_FUNCTION_BASE,%eax	/* was this a SMP call single function request? */
-	je	_call_single
+	jne	1f
+	ret				/* if so, just return */
+1:
 #endif
+#if NCPUS > 1
+	cmpl	$CALL_PMAP_UPDATE,%eax	/* was this a SMP pmap_update request? */
+	je	_call_single
+
+	cmpl	$CALL_AST_CHECK,%eax	/* was this a SMP remote -> local ast request? */
+	je	_call_local_ast
+#endif
+
 	subq	$16,%rsp		/* Two local variables */
 	movl	%eax,S_IRQ		/* save irq number */
+
 	call	spl7			/* set ipl */
 	movl	%eax,S_IPL		/* save previous ipl */
-
-	;
-	movq	S_IPL,S_ARG1		/* previous ipl as 2nd arg */
-
-	;
-	movq	S_RET,S_ARG2		/* return address as 3th arg */
-
-	;
-	movq	S_REGS,S_ARG3		/* address of interrupted registers as 4th arg */
-
-	movl	S_IRQ,%eax		/* copy irq number */
-	shll	$2,%eax			/* irq * 4 */
-	movl	EXT(iunit)(%rax),%edi	/* get device unit number as 1st arg */
-
-	shll	$1,%eax			/* irq * 8 */
-	call	*EXT(ivect)(%rax)	/* call interrupt handler */
-
-	movl	S_IPL,%edi		/* restore previous ipl */
-	call	splx_cli		/* restore previous ipl */
-	cli				/* XXX no more nested interrupts */
 
 	movl	S_IRQ,%ecx		/* restore irq number */
 
@@ -112,18 +100,43 @@ ENTRY(interrupt)
 #else
 	cmpl    $16,%ecx		/* was this a low ISA intr? */
 	jge      _no_eoi		/* no, must be PCI (let irq_ack handle EOI) */
-_isa_eoi:
 	movl	%ecx,%edi		/* load irq number as 1st arg */
 	call	EXT(ioapic_irq_eoi)	/* ioapic irq specific EOI */
+_no_eoi:
+#endif
+
+	;
+	movq	S_IPL,S_ARG1		/* previous ipl as 2nd arg */
+
+	;
+	movq	S_RET,S_ARG2		/* return address as 3th arg */
+
+	;
+	movq	S_REGS,S_ARG3		/* address of interrupted registers as 4th arg */
+
+	movl	S_IRQ,%eax		/* copy irq number */
+	shll	$2,%eax			/* irq * 4 */
+	movl	EXT(iunit)(%rax),%edi	/* get device unit number as 1st arg */
+
+	shll	$1,%eax			/* irq * 8 */
+	call	*EXT(ivect)(%rax)	/* call interrupt handler */
+
+	movl	S_IPL,%edi		/* restore previous ipl */
+	call	splx_cli		/* restore previous ipl */
+
 	addq	$16,%rsp		/* pop local variables */
 	ret
+
+#if NCPUS > 1
 _call_single:
 	cli                             /* no nested interrupts */
 	call	EXT(lapic_eoi)		/* lapic EOI before the handler to allow extra update */
-	call	EXT(pmap_update_interrupt) /* TODO: Allow other functions */
+	call	EXT(pmap_update_interrupt)
+	ret
+
+_call_local_ast:
+	call	EXT(ast_check)		/* AST check on this cpu */
+	call	EXT(lapic_eoi)		/* lapic EOI */
 	ret
 #endif
-	addq	$16,%rsp		/* pop local variables */
-_no_eoi:
-	ret
 END(interrupt)

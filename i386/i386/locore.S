@@ -652,8 +652,10 @@ INTERRUPT(21)
 INTERRUPT(22)
 INTERRUPT(23)
 #endif
-/* Invalidate TLB IPI to call pmap_update_interrupt() on a specific cpu */
-INTERRUPT(CALL_SINGLE_FUNCTION_BASE)
+#if NCPUS > 1
+INTERRUPT(CALL_AST_CHECK)
+INTERRUPT(CALL_PMAP_UPDATE)
+#endif
 #ifdef APIC
 /* Spurious interrupt, set irq number to vect number */
 INTERRUPT(255)
@@ -701,12 +703,20 @@ ENTRY(all_intrs)
 	TIME_INT_ENTRY			/* do timing */
 #endif
 
-	call	EXT(interrupt)		/* call generic interrupt routine */
+#ifdef MACH_LDEBUG
+	CPU_NUMBER(%ecx)
+	incl	CX(EXT(in_interrupt),%ecx)
+#endif
 
-	.globl	EXT(return_to_iret)
-LEXT(return_to_iret)			/* ( label for kdb_kintr and hardclock) */
+	call	EXT(interrupt)		/* call generic interrupt routine */
+	.globl	EXT(return_to_iret)	/* ( label for kdb_kintr and hardclock */
+LEXT(return_to_iret)			/* to find the return from calling interrupt) */
 
 	CPU_NUMBER(%edx)
+#ifdef MACH_LDEBUG
+	decl	CX(EXT(in_interrupt),%edx)
+#endif
+
 #if	STAT_TIME
 #else
 	TIME_INT_EXIT			/* do timing */
