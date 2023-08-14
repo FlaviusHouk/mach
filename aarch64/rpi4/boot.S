@@ -1,4 +1,4 @@
-#include "common.h"
+#include "aarch64/vm_params.h"
 
 .globl _start
 _start:
