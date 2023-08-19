@@ -429,6 +429,7 @@ pt_entry_t *kernel_page_dir;
  * physical-to-physical transfers.
  */
 static pmap_mapwindow_t mapwindows[PMAP_NMAPWINDOWS * NCPUS];
+#define MAPWINDOW_SIZE (PMAP_NMAPWINDOWS * NCPUS * PAGE_SIZE)
 
 #ifdef __x86_64__
 static inline pt_entry_t *
@@ -753,8 +754,8 @@ void pmap_bootstrap(void)
 	kernel_virtual_end = kernel_virtual_start + VM_KERNEL_MAP_SIZE;
 
 	if (kernel_virtual_end < kernel_virtual_start
-			|| kernel_virtual_end > VM_MAX_KERNEL_ADDRESS)
-		kernel_virtual_end = VM_MAX_KERNEL_ADDRESS;
+			|| kernel_virtual_end > VM_MAX_KERNEL_ADDRESS - PAGE_SIZE)
+		kernel_virtual_end = VM_MAX_KERNEL_ADDRESS - PAGE_SIZE;
 
 	/*
 	 * Allocate and clear a kernel page directory.
@@ -857,9 +858,9 @@ void pmap_bootstrap(void)
 			}
 			for (; pte < ptable+NPTES; pte++)
 			{
-				if (va >= kernel_virtual_end - PMAP_NMAPWINDOWS * NCPUS * PAGE_SIZE && va < kernel_virtual_end)
+				if (va >= kernel_virtual_end - MAPWINDOW_SIZE && va < kernel_virtual_end)
 				{
-					pmap_mapwindow_t *win = &mapwindows[atop(va - (kernel_virtual_end - PMAP_NMAPWINDOWS * NCPUS * PAGE_SIZE))];
+					pmap_mapwindow_t *win = &mapwindows[atop(va - (kernel_virtual_end - MAPWINDOW_SIZE))];
 					win->entry = pte;
 					win->vaddr = va;
 				}
@@ -1054,7 +1055,7 @@ void pmap_virtual_space(
 	vm_offset_t *endp)
 {
 	*startp = kernel_virtual_start;
-	*endp = kernel_virtual_end - PMAP_NMAPWINDOWS * NCPUS * PAGE_SIZE;
+	*endp = kernel_virtual_end - MAPWINDOW_SIZE;
 }
 
 /*
@@ -1552,6 +1553,9 @@ void pmap_remove_range(
 	struct mmu_update update[HYP_BATCH_MMU_UPDATES];
 #endif	/* MACH_PV_PAGETABLES */
 
+	if (pmap == kernel_pmap && (va < kernel_virtual_start || va + (epte-spte)*PAGE_SIZE > kernel_virtual_end))
+		panic("pmap_remove_range(%lx-%lx) falls in physical memory area!\n", (unsigned long) va, (unsigned long) va + (epte-spte)*PAGE_SIZE);
+
 #if	DEBUG_PTE_PAGE
 	if (pmap != kernel_pmap)
 		ptep_check(get_pte_page(spte));
@@ -1564,6 +1568,9 @@ void pmap_remove_range(
 
 	    if (*cpte == 0)
 		continue;
+
+	    assert(*cpte & INTEL_PTE_VALID);
+
 	    pa = pte_to_pa(*cpte);
 
 	    num_removed++;
@@ -1638,7 +1645,7 @@ void pmap_remove_range(
 
 		pv_h = pai_to_pvh(pai);
 		if (pv_h->pmap == PMAP_NULL) {
-		    panic("pmap_remove: null pv_list!");
+		    panic("pmap_remove: null pv_list for pai %lx at va %lx!", pai, (unsigned long) va);
 		}
 		if (pv_h->va == va && pv_h->pmap == pmap) {
 		    /*
@@ -1712,7 +1719,7 @@ void pmap_remove(
 	    pt_entry_t *pde = pmap_pde(map, s);
 
 	    l = (s + PDE_MAPPED_SIZE) & ~(PDE_MAPPED_SIZE-1);
-	    if (l > e)
+	    if (l > e || l < s)
 		l = e;
 	    if (pde && (*pde & INTEL_PTE_VALID)) {
 		spte = (pt_entry_t *)ptetokv(*pde);
@@ -1947,7 +1954,7 @@ void pmap_protect(
 	    pt_entry_t *pde = pde = pmap_pde(map, s);
 
 	    l = (s + PDE_MAPPED_SIZE) & ~(PDE_MAPPED_SIZE-1);
-	    if (l > e)
+	    if (l > e || l < s)
 		l = e;
 	    if (pde && (*pde & INTEL_PTE_VALID)) {
 		spte = (pt_entry_t *)ptetokv(*pde);
@@ -2135,10 +2142,8 @@ void pmap_enter(
 	if (pmap == PMAP_NULL)
 		return;
 
-#if !MACH_KDB
 	if (pmap == kernel_pmap && (v < kernel_virtual_start || v >= kernel_virtual_end))
-		panic("pmap_enter(%llx, %llx) falls in physical memory area!\n", v, (unsigned long long) pa);
-#endif
+		panic("pmap_enter(%lx, %llx) falls in physical memory area!\n", (unsigned long) v, (unsigned long long) pa);
 #if !(__i486__ || __i586__ || __i686__)
 	if (pmap == kernel_pmap && (prot & VM_PROT_WRITE) == 0
 	    && !wired /* hack for io_wire */ ) {
